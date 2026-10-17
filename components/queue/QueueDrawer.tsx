@@ -4,19 +4,25 @@ import React, { useRef, useState } from "react";
 import { usePlayerStore } from "@/lib/audio/player-store";
 import { TapeSpine } from "./TapeSpine";
 import { DropZone } from "./DropZone";
-import { Trash2, X, Plus } from "lucide-react";
+import { Trash2, X, Plus, Disc3 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import type { DefaultTrackDTO } from "@/lib/actions/playlist";
+import { defaultPlaylistToTracks } from "@/lib/audio/playlist-utils";
+import { toast } from "@/lib/toast-store";
 
 interface QueueDrawerProps {
   isMobileDrawer?: boolean;
+  defaultPlaylist?: DefaultTrackDTO[];
 }
 
-export function QueueDrawer({ isMobileDrawer = false }: QueueDrawerProps) {
+export function QueueDrawer({ isMobileDrawer = false, defaultPlaylist = [] }: QueueDrawerProps) {
   const queue = usePlayerStore((s) => s.queue);
   const currentIndex = usePlayerStore((s) => s.currentIndex);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isQueueOpen = usePlayerStore((s) => s.isQueueOpen);
 
+  const addTracks = usePlayerStore((s) => s.addTracks);
+  const play = usePlayerStore((s) => s.play);
   const setCurrentIndex = usePlayerStore((s) => s.setCurrentIndex);
   const removeTrack = usePlayerStore((s) => s.removeTrack);
   const clearQueue = usePlayerStore((s) => s.clearQueue);
@@ -53,6 +59,19 @@ export function QueueDrawer({ isMobileDrawer = false }: QueueDrawerProps) {
     setDraggedIndex(null);
   };
 
+  const handleLoadChillGuyTape = () => {
+    if (!defaultPlaylist || defaultPlaylist.length === 0) return;
+    const tracks = defaultPlaylistToTracks(defaultPlaylist);
+    addTracks(tracks);
+    if (queue.length === 0) {
+      play();
+    }
+    toast.success(
+      `Added ${tracks.length} track${tracks.length === 1 ? "" : "s"} from the Chill Guy tape.`,
+      "Chill Guy Tape"
+    );
+  };
+
   if (isMobileDrawer && !isQueueOpen) {
     return null;
   }
@@ -71,6 +90,19 @@ export function QueueDrawer({ isMobileDrawer = false }: QueueDrawerProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {defaultPlaylist.length > 0 && (
+            <button
+              type="button"
+              title="Load Chill Guy default playlist"
+              aria-label="Load Chill Guy default playlist"
+              onClick={handleLoadChillGuyTape}
+              className="flex items-center gap-1.5 px-2.5 py-1 bg-secondary hover:bg-secondary/80 text-primary border-2 border-primary rounded-sm text-xs font-bold font-body transition-colors focus-ring"
+            >
+              <Disc3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Chill Guy Tape</span>
+            </button>
+          )}
+
           {queue.length > 0 && (
             <>
               <button
@@ -109,14 +141,14 @@ export function QueueDrawer({ isMobileDrawer = false }: QueueDrawerProps) {
       {/* Add more dropzone toggle */}
       {showAddMore && (
         <div className="mb-4">
-          <DropZone compact />
+          <DropZone compact defaultPlaylist={defaultPlaylist} />
         </div>
       )}
 
       {/* Queue Items */}
       {queue.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center py-8">
-          <DropZone compact />
+          <DropZone compact defaultPlaylist={defaultPlaylist} />
         </div>
       ) : isVirtualized ? (
         <div
@@ -206,4 +238,3 @@ export function QueueDrawer({ isMobileDrawer = false }: QueueDrawerProps) {
 
   return <div className="w-full">{content}</div>;
 }
-

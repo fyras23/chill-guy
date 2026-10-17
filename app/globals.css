@@ -66,6 +66,13 @@
 
 * {
   box-sizing: border-box;
+  /* Hide scrollbar across all browsers while keeping scroll functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge legacy */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 html, body {

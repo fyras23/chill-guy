@@ -8,7 +8,7 @@ import { getSceneQuality } from "@/lib/supabase/types";
 import { Switch } from "@/components/ui/Switch";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { toast } from "@/lib/toast-store";
-import { renameScene, toggleSceneActive, deleteScene } from "@/lib/actions/scenes";
+import { renameScene, toggleSceneActive, deleteScene, updateSceneDimensions } from "@/lib/actions/scenes";
 
 interface SceneCardProps {
   scene: Scene;
@@ -38,6 +38,22 @@ export function SceneCard({
     "-rotate-[0.5deg]",
     "rotate-[0.7deg]",
   ][index % 4];
+
+  // Auto-measure dimensions on load if missing from database
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = e.currentTarget;
+    if ((!scene.width || !scene.height) && target.naturalWidth && target.naturalHeight) {
+      updateSceneDimensions({
+        fileKey: scene.file_key,
+        width: target.naturalWidth,
+        height: target.naturalHeight,
+      }).then((res) => {
+        if (!res?.error) {
+          onRefresh();
+        }
+      });
+    }
+  };
 
   const handleSaveName = async () => {
     setIsEditing(false);
@@ -82,6 +98,10 @@ export function SceneCard({
     }
   };
 
+  const formattedSize = scene.size_bytes
+    ? (scene.size_bytes / (1024 * 1024)).toFixed(1) + " MB"
+    : null;
+
   return (
     <>
       <div
@@ -106,12 +126,14 @@ export function SceneCard({
           </div>
         </div>
 
-        {/* 4:3 Polaroid Image Frame */}
+        {/* 4:3 Polaroid Image Frame with unoptimized full crispness */}
         <div className="relative w-full aspect-[4/3] bg-surface-sunken border-2 border-primary rounded-sm overflow-hidden mb-3">
           <Image
             src={scene.url}
             alt={scene.name}
             fill
+            unoptimized
+            onLoad={handleImageLoad}
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             className="object-cover"
             priority={index < 4}
@@ -175,16 +197,30 @@ export function SceneCard({
             </button>
           </div>
 
-          {/* Metadata Row: Dimensions & Quality Badge */}
+          {/* Metadata Row: Dimensions, Size & Quality Badge */}
           <div className="flex items-center justify-between gap-2 mt-auto pt-2 border-t border-primary/10">
-            <span className="font-lcd text-xs text-text-muted font-bold">
-              {scene.width && scene.height
-                ? `${scene.width} × ${scene.height}`
-                : "Dimensions pending"}
-            </span>
+            <div className="flex flex-col">
+              <span className="font-lcd text-xs text-text-muted font-bold">
+                {scene.width && scene.height
+                  ? `${scene.width} × ${scene.height}`
+                  : "Detecting..."}
+              </span>
+              {formattedSize && (
+                <span className="font-body text-[10px] text-text-muted">
+                  {formattedSize}
+                </span>
+              )}
+            </div>
 
             {/* Quality Badge (Low = Warning, Good = Tertiary, Great = Leaf) */}
             <div
+              title={
+                quality === "great"
+                  ? "Great resolution (2560×1440+): sharp drift at 4K"
+                  : quality === "good"
+                  ? "Good resolution (1920×1080+): clear full HD"
+                  : "Low resolution (<1080p): soft in Vibe mode"
+              }
               className={`flex items-center gap-1 px-2 py-0.5 rounded-sm border border-primary text-xs font-bold font-body ${
                 quality === "great"
                   ? "bg-leaf text-surface-raised"
@@ -222,4 +258,3 @@ export function SceneCard({
     </>
   );
 }
-

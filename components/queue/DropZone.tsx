@@ -9,17 +9,33 @@ import {
   createTrackFromFile,
   naturalSortFiles,
 } from "@/lib/audio/metadata";
+import type { DefaultTrackDTO } from "@/lib/actions/playlist";
+import { defaultPlaylistToTracks } from "@/lib/audio/playlist-utils";
+import { Disc3, Play } from "lucide-react";
 
 interface DropZoneProps {
   compact?: boolean;
+  defaultPlaylist?: DefaultTrackDTO[];
 }
 
-export function DropZone({ compact = false }: DropZoneProps) {
+export function DropZone({ compact = false, defaultPlaylist = [] }: DropZoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const addTracks = usePlayerStore((s) => s.addTracks);
+  const play = usePlayerStore((s) => s.play);
+
+  const handlePlayDefaultPlaylist = () => {
+    if (!defaultPlaylist || defaultPlaylist.length === 0) return;
+    const tracks = defaultPlaylistToTracks(defaultPlaylist);
+    addTracks(tracks);
+    play();
+    toast.success(
+      `Loaded ${tracks.length} tune${tracks.length === 1 ? "" : "s"} from the Chill Guy playlist!`,
+      "Chill Guy Tape"
+    );
+  };
 
   const handleFiles = (fileList: FileList | File[], source: "files" | "folder" | "drop" = "files") => {
     const rawFiles = Array.from(fileList);
@@ -102,7 +118,7 @@ export function DropZone({ compact = false }: DropZoneProps) {
         isDragOver
           ? "bg-surface-sunken border-[3px] border-primary"
           : "bg-surface-raised border-[3px] border-dashed border-primary shadow-sticker"
-      } ${compact ? "py-8" : "py-12 md:py-16"}`}
+      } ${compact ? "py-8" : "py-10 md:py-14"}`}
     >
       {/* Hidden File and Folder Pickers */}
       <input
@@ -130,7 +146,41 @@ export function DropZone({ compact = false }: DropZoneProps) {
         }}
       />
 
-      {/* Rooftop Hangout Original Illustration (Lava lamp, speaker, comfy rooftop cushion) */}
+      {/* Featured "Chill Guy" Default Playlist Card */}
+      {defaultPlaylist.length > 0 && (
+        <div className="w-full max-w-md bg-secondary/15 border-2 border-primary rounded-lg p-3 sm:p-4 mb-6 shadow-sticker flex flex-col sm:flex-row items-center justify-between gap-3 text-left animate-in fade-in duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-md bg-secondary border-2 border-primary flex items-center justify-center shrink-0 shadow-[2px_2px_0_#1A2A86]">
+              <Disc3 className="w-6 h-6 text-primary animate-[spin_8s_linear_infinite]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-display font-bold text-sm sm:text-base text-primary">
+                  Chill Guy Playlist
+                </span>
+                <span className="text-[10px] font-bold font-body bg-secondary text-primary px-1.5 py-0.5 rounded border border-primary uppercase">
+                  Default Tape
+                </span>
+              </div>
+              <p className="font-body text-xs text-text-muted">
+                {defaultPlaylist.length} chill tune{defaultPlaylist.length === 1 ? "" : "s"} • Stream instantly
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handlePlayDefaultPlaylist}
+            className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 font-bold"
+          >
+            <Play className="w-4 h-4 fill-primary text-primary" />
+            <span>Play Tape</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Rooftop Hangout Original Illustration */}
       {!compact && (
         <svg
           width="180"
@@ -171,7 +221,7 @@ export function DropZone({ compact = false }: DropZoneProps) {
             strokeWidth="2"
           />
           <path d="M19 45L21 38H25L27 45Z" fill="#1A2A86" stroke="#1A2A86" strokeWidth="1.5" />
-          {/* Lava lamp warm floating blobs (Secondary & Mustard) */}
+          {/* Lava lamp warm floating blobs */}
           <circle cx="23" cy="62" r="3.5" fill="#FF8A4C" />
           <circle cx="22" cy="52" r="2.5" fill="#E0A200" />
           <circle cx="24" cy="45" r="1.5" fill="#FF8A4C" />
@@ -180,7 +230,11 @@ export function DropZone({ compact = false }: DropZoneProps) {
 
       {/* Main Copy */}
       <h3 className="font-display text-xl md:text-2xl font-bold text-primary mb-2">
-        {isDragOver ? "Drop to add" : "Pick some tunes to get started."}
+        {isDragOver
+          ? "Drop to add"
+          : defaultPlaylist.length > 0
+          ? "Or drop your own tunes"
+          : "Pick some tunes to get started."}
       </h3>
       <p className="font-body text-sm md:text-base text-text-muted max-w-md mb-6 leading-relaxed">
         Your music stays on this device. Browsers do not keep file access across reloads, so add tracks whenever you hang out.
@@ -206,4 +260,3 @@ export function DropZone({ compact = false }: DropZoneProps) {
     </div>
   );
 }
-

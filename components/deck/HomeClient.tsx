@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePlayerStore } from "@/lib/audio/player-store";
 import type { Scene } from "@/lib/supabase/types";
+import type { DefaultTrackDTO } from "@/lib/actions/playlist";
 import { Logo } from "./Logo";
 import { CassetteDeck } from "./CassetteDeck";
 import { Skyline } from "./Skyline";
@@ -15,9 +16,10 @@ import { Sparkles, Image as ImageIcon } from "lucide-react";
 
 interface HomeClientProps {
   initialScenes: Scene[];
+  defaultPlaylist?: DefaultTrackDTO[];
 }
 
-export function HomeClient({ initialScenes }: HomeClientProps) {
+export function HomeClient({ initialScenes, defaultPlaylist = [] }: HomeClientProps) {
   const queue = usePlayerStore((s) => s.queue);
   const setVibeActive = usePlayerStore((s) => s.setVibeActive);
 
@@ -33,12 +35,12 @@ export function HomeClient({ initialScenes }: HomeClientProps) {
           {/* Scenes Manager link */}
           <Link
             href="/scenes"
-            title="Manage Vibe Scenes"
-            aria-label="Manage Vibe Scenes"
+            title="Manage Vibe Scenes & Playlist"
+            aria-label="Manage Vibe Scenes & Playlist"
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-surface-raised text-primary border-[2px] border-primary rounded-md font-bold font-body text-xs sm:text-sm shadow-sticker hover:-translate-x-px hover:-translate-y-px transition-all focus-ring"
           >
             <ImageIcon className="w-4 h-4 text-primary" strokeWidth={2.5} />
-            <span className="hidden sm:inline">Scenes</span>
+            <span className="hidden sm:inline">Admin</span>
           </Link>
 
           {/* Vibe Mode button */}
@@ -60,9 +62,9 @@ export function HomeClient({ initialScenes }: HomeClientProps) {
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 flex flex-col justify-center">
         {!hasTunes ? (
-          /* Empty state: Large Friendly Rooftop Drop Zone */
+          /* Empty state: Large Friendly Rooftop Drop Zone with Chill Guy Tape feature */
           <div className="w-full max-w-2xl mx-auto my-auto animate-in fade-in duration-300">
-            <DropZone />
+            <DropZone defaultPlaylist={defaultPlaylist} />
           </div>
         ) : (
           /* Populated state: Desktop side-by-side or Mobile stacked layout */
@@ -74,13 +76,13 @@ export function HomeClient({ initialScenes }: HomeClientProps) {
 
             {/* Queue / Tape Stack (Takes 5 cols on desktop, hidden on mobile in favor of bottom sheet) */}
             <div className="hidden lg:block lg:col-span-5 w-full sticky top-8">
-              <QueueDrawer isMobileDrawer={false} />
+              <QueueDrawer isMobileDrawer={false} defaultPlaylist={defaultPlaylist} />
             </div>
           </div>
         )}
 
         {/* Mobile Bottom Sheet Queue */}
-        <QueueDrawer isMobileDrawer={true} />
+        <QueueDrawer isMobileDrawer={true} defaultPlaylist={defaultPlaylist} />
       </main>
 
       {/* Static City Skyline Silhouette along bottom with lit windows */}
@@ -91,4 +93,3 @@ export function HomeClient({ initialScenes }: HomeClientProps) {
     </div>
   );
 }
-

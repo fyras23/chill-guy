@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { verifyAdminUser } from "@/lib/auth/admin-check";
 import { getAllScenesAdmin } from "@/lib/actions/scenes";
+import { getAllDefaultTracksAdmin } from "@/lib/actions/playlist";
 import { Logo } from "@/components/deck/Logo";
 import { ScenesManager } from "./ScenesManager";
 import { ArrowLeft } from "lucide-react";
@@ -14,10 +15,18 @@ export default async function ScenesPage() {
   }
 
   let scenes: Awaited<ReturnType<typeof getAllScenesAdmin>> = [];
+  let tracks: Awaited<ReturnType<typeof getAllDefaultTracksAdmin>> = [];
+
   try {
     scenes = await getAllScenesAdmin();
   } catch (err) {
     console.error("Error loading scenes in admin page:", err);
+  }
+
+  try {
+    tracks = await getAllDefaultTracksAdmin();
+  } catch (err) {
+    console.error("Error loading tracks in admin page:", err);
   }
 
   return (
@@ -46,14 +55,14 @@ export default async function ScenesPage() {
       <div className="max-w-7xl mx-auto w-full flex-1">
         <div className="mb-6">
           <h1 className="font-display text-2xl md:text-3xl font-bold text-primary mb-1">
-            Scenes Manager
+            Chill Guy Studio Manager
           </h1>
           <p className="font-body text-sm text-text-muted">
-            Admin access is active. Drag to reorder, edit names, or toggle visibility in Vibe mode.
+            Manage the default &quot;Chill Guy&quot; playlist and background Vibe scenes.
           </p>
         </div>
 
-        <ScenesManager initialScenes={scenes} />
+        <ScenesManager initialScenes={scenes} initialTracks={tracks} />
       </div>
     </main>
   );

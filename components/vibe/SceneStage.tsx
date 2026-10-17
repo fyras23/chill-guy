@@ -209,7 +209,14 @@ export function SceneStage({ scenes, isPlaying }: SceneStageProps) {
             <img
               src={layer.scene.url}
               alt=""
+              loading="eager"
+              decoding="async"
               className="relative w-full h-full object-contain pointer-events-none"
+              style={{
+                imageRendering: "auto",
+                backfaceVisibility: "hidden",
+                transform: "translateZ(0)",
+              }}
             />
           </>
         ) : (
@@ -218,7 +225,14 @@ export function SceneStage({ scenes, isPlaying }: SceneStageProps) {
           <img
             src={layer.scene.url}
             alt=""
+            loading="eager"
+            decoding="async"
             className="w-full h-full object-cover pointer-events-none"
+            style={{
+              imageRendering: "auto",
+              backfaceVisibility: "hidden",
+              transform: "translateZ(0)",
+            }}
           />
         )}
       </div>

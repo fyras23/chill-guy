@@ -5,10 +5,17 @@ import { useUploadThing } from "@/lib/uploadthing";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast-store";
 import { updateSceneDimensions } from "@/lib/actions/scenes";
-import { UploadCloud, Image as ImageIcon } from "lucide-react";
+import { getSceneQuality } from "@/lib/supabase/types";
+import { UploadCloud, Image as ImageIcon, Sparkles } from "lucide-react";
 
 interface SceneUploaderProps {
   onUploadComplete: () => void;
+}
+
+interface ImageDimension {
+  width: number;
+  height: number;
+  sizeBytes: number;
 }
 
 export function SceneUploader({ onUploadComplete }: SceneUploaderProps) {
@@ -20,86 +27,143 @@ export function SceneUploader({ onUploadComplete }: SceneUploaderProps) {
     onUploadProgress: (p) => {
       setUploadProgress(p);
     },
-    onClientUploadComplete: async (res) => {
-      setUploadProgress(null);
-      if (!res || res.length === 0) return;
-
-      toast.success(res.length === 1 ? "Scene added." : `Added ${res.length} scenes.`);
-      onUploadComplete();
-    },
     onUploadError: (err) => {
       setUploadProgress(null);
       toast.error(err.message, "Upload failed");
     },
   });
 
-  const handleFiles = async (files: File[]) => {
-    const validImageFiles: File[] = [];
-
-    files.forEach((file) => {
-      if (file.type.startsWith("image/")) {
-        validImageFiles.push(file);
-      }
-    });
-
-    if (validImageFiles.length === 0) {
-      toast.warning("Please pick image files (PNG, JPG, WebP).");
-      return;
-    }
-
-    try {
-      // Start upload
-      const uploaded = await startUpload(validImageFiles);
-      if (!uploaded) return;
-
-      // Measure dimensions for each file and save to Supabase
-      for (let i = 0; i < uploaded.length; i++) {
-        const up = uploaded[i];
-        const originalFile = validImageFiles[i];
-
-        if (originalFile && up.key) {
-          try {
-            const dimensions = await measureImageFile(originalFile);
-            await updateSceneDimensions({
-              fileKey: up.key,
-              width: dimensions.width,
-              height: dimensions.height,
-              sizeBytes: originalFile.size,
-            });
-          } catch (e) {
-            console.error("Failed measuring image:", e);
-          }
-        }
-      }
-
-      onUploadComplete();
-    } catch (err) {
-      toast.error((err as Error).message, "Upload failed");
-    }
-  };
-
   const measureImageFile = (file: File): Promise<{ width: number; height: number }> => {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
+      const objectUrl = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         const w = img.naturalWidth;
         const h = img.naturalHeight;
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(objectUrl);
         resolve({ width: w, height: h });
       };
       img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Image failed to load for dimension measurement"));
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error(`Failed to read dimensions of ${file.name}`));
+      };
+      img.src = objectUrl;
+    });
+  };
+
+  const measureImageUrl = (url: string): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        resolve({ width: img.naturalWidth || 1920, height: img.naturalHeight || 1080 });
+      };
+      img.onerror = () => {
+        resolve({ width: 1920, height: 1080 });
       };
       img.src = url;
     });
   };
 
+  const handleFiles = async (files: File[]) => {
+    const validImageFiles: File[] = [];
+
+    files.forEach((file) => {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const isImage =
+        file.type.startsWith("image/") ||
+        ["png", "jpg", "jpeg", "webp", "avif", "tiff"].includes(ext);
+
+      if (isImage) {
+        validImageFiles.push(file);
+      }
+    });
+
+    if (validImageFiles.length === 0) {
+      toast.warning("Please pick high-resolution image files (PNG, JPG, WebP, AVIF).");
+      return;
+    }
+
+    try {
+      // 1. Measure native original dimensions before uploading to preserve true resolution
+      const dimensionMap = new Map<string, ImageDimension>();
+      for (const file of validImageFiles) {
+        try {
+          const dims = await measureImageFile(file);
+          dimensionMap.set(file.name, {
+            width: dims.width,
+            height: dims.height,
+            sizeBytes: file.size,
+          });
+        } catch {
+          // If local blob decode fails, will fallback to measuring remote URL post-upload
+        }
+      }
+
+      // 2. Upload original uncompressed files to UploadThing
+      const uploaded = await startUpload(validImageFiles);
+      if (!uploaded || uploaded.length === 0) {
+        setUploadProgress(null);
+        return;
+      }
+
+      let hasLowRes = false;
+
+      // 3. Match each uploaded file and save accurate dimensions & size to Postgres
+      await Promise.all(
+        uploaded.map(async (up, index) => {
+          let dims = dimensionMap.get(up.name) || dimensionMap.get(validImageFiles[index]?.name);
+
+          // If dimensions weren't measured locally, measure from uploaded CDN URL
+          if (!dims || !dims.width || !dims.height) {
+            const remoteUrl = (up as { ufsUrl?: string; url: string }).ufsUrl || up.url;
+            const remoteDims = await measureImageUrl(remoteUrl);
+            dims = {
+              width: remoteDims.width,
+              height: remoteDims.height,
+              sizeBytes: up.size || 0,
+            };
+          }
+
+          if (dims.width && dims.height) {
+            const quality = getSceneQuality(dims.width, dims.height);
+            if (quality === "low") {
+              hasLowRes = true;
+            }
+
+            await updateSceneDimensions({
+              fileKey: up.key,
+              width: dims.width,
+              height: dims.height,
+              sizeBytes: dims.sizeBytes || up.size,
+            });
+          }
+        })
+      );
+
+      setUploadProgress(null);
+
+      // Toast feedback matching DESIGN.md tone rules
+      if (uploaded.length === 1) {
+        toast.success("Scene added.");
+      } else {
+        toast.success(`Added ${uploaded.length} scenes.`);
+      }
+
+      if (hasLowRes) {
+        toast.warning("Low resolution. This will look soft in Vibe mode.");
+      }
+
+      onUploadComplete();
+    } catch (err) {
+      setUploadProgress(null);
+      toast.error((err as Error).message, "Upload failed");
+    }
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (e.dataTransfer.files) {
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(Array.from(e.dataTransfer.files));
     }
   };
@@ -122,7 +186,7 @@ export function SceneUploader({ onUploadComplete }: SceneUploaderProps) {
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,.png,.jpg,.jpeg,.webp,.avif,.tiff"
         className="hidden"
         onChange={(e) => {
           if (e.target.files) handleFiles(Array.from(e.target.files));
@@ -135,11 +199,17 @@ export function SceneUploader({ onUploadComplete }: SceneUploaderProps) {
       </div>
 
       <h3 className="font-display text-xl font-bold text-primary mb-1">
-        {isUploading ? "Uploading scenes..." : "Add Vibe Scenes"}
+        {isUploading ? "Uploading original scenes..." : "Add Vibe Scenes"}
       </h3>
-      <p className="font-body text-sm text-text-muted max-w-sm mb-4 leading-relaxed">
-        Upload high-resolution images (recommended 2560×1440 or higher). They drift across the screen while tunes play.
+      <p className="font-body text-sm text-text-muted max-w-md mb-2 leading-relaxed">
+        Upload high-resolution images. Original quality is preserved without downscaling or re-encoding.
       </p>
+
+      {/* High Quality resolution helper note */}
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface-sunken border border-primary/20 rounded-sm text-xs font-semibold text-text-muted mb-4">
+        <Sparkles className="w-3.5 h-3.5 text-secondary" strokeWidth={2.5} />
+        <span>Recommend 2560×1440 or 4K (3840×2160) for sharp full-screen drift</span>
+      </div>
 
       {isUploading ? (
         <div className="w-full max-w-xs flex flex-col gap-2">
@@ -166,4 +236,3 @@ export function SceneUploader({ onUploadComplete }: SceneUploaderProps) {
     </div>
   );
 }
-
