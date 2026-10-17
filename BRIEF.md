@@ -68,9 +68,9 @@ Build the cassette-deck player exactly as specified in DESIGN.md (reels that tur
 
 ### F6. Auth and access
 - Public: `/` (player and Vibe mode) can read active scenes.
-- Admin: `/scenes` and every mutation require a signed-in Supabase user whose email equals `ADMIN_EMAIL`. Use Supabase Auth email magic link (`/login`, `/auth/callback`).
-- Enforce on the server in three places: `middleware.ts` for `/scenes`, the UploadThing middleware, and every server action. Never trust the client.
-- The service-role key is used only in server code, never in anything importable by a client component.
+- Admin: `/scenes` and every mutation require a valid admin session, created after the six-digit PIN stored as a salted scrypt hash in `public.admin_users` is verified server-side. `/login` accepts six separate PIN digits; five failed attempts lock access for 15 minutes.
+- The successful PIN check sets an eight-hour, signed, `HttpOnly`, `SameSite=Strict` cookie. Enforce its signature on the server in the Next.js proxy, UploadThing middleware, and every server action. Never trust the client.
+- Scene reads and mutations use Prisma server-side with `DATABASE_URL`; a Supabase service-role key is not required.
 
 ### F7. Settings (drawer, saved to `localStorage`)
 - Scene interval: 10 to 120s, default **30s**.
@@ -78,6 +78,8 @@ Build the cassette-deck player exactly as specified in DESIGN.md (reels that tur
 - Shuffle scenes (default on). Drift motion (default on). Fit: Fill (default) or Fit with soft backdrop. Auto-enter Vibe on play (default on).
 
 ## 4. Data model (Supabase)
+
+Run `npx prisma migrate deploy` to apply [`prisma/migrations/20261017000000_admin_pin_auth/migration.sql`](./prisma/migrations/20261017000000_admin_pin_auth/migration.sql). It creates the private `admin_users` table, seeds the admin account with a salted PIN hash, and adds an atomic database-backed attempt limiter. The table has RLS enabled and no client-access policies; only server-side Prisma queries can read or update it. The Prisma `AdminUser` model maps to this table. Existing installations with the `scenes` table must first mark `20261016000000_baseline` as applied using `npx prisma migrate resolve --applied 20261016000000_baseline`; fresh databases can deploy both migrations directly.
 
 ```sql
 create extension if not exists "pgcrypto";
@@ -105,10 +107,10 @@ create policy "public can read active scenes"
   using (is_active = true);
 
 -- No insert/update/delete policies on purpose.
--- Writes go through server actions using the service-role key after the admin check.
+-- Writes go through Prisma-backed server actions after the admin check.
 ```
 
-The admin screen needs to see inactive scenes too, so it reads server-side with the service-role client.
+The admin screen reads active and inactive scenes server-side through Prisma after verifying the admin session.
 
 ## 5. UploadThing
 
@@ -173,7 +175,7 @@ app/
   layout.tsx                 fonts, providers, grain overlay
   page.tsx                   server: fetch active scenes, render <Deck/>
   login/page.tsx
-  auth/callback/route.ts
+  api/admin/login/route.ts
   scenes/page.tsx            admin gallery (server-guarded)
   api/uploadthing/{core.ts,route.ts}
 components/
@@ -196,11 +198,8 @@ DESIGN.md
 ## 9. Environment variables
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=      # server only
 UPLOADTHING_TOKEN=              # server only
-ADMIN_EMAIL=                    # the one email allowed into /scenes
+ADMIN_SESSION_SECRET=           # random secret, at least 32 characters
 NEXT_PUBLIC_SITE_URL=
 ```
 
@@ -221,7 +220,7 @@ Ship `.env.example`. Never commit real values. Validate env at startup with `zod
 3. A scene stays about 30s, then transitions to the next. Over 10 consecutive changes, at least 4 different transition types appear and none repeats back to back.
 4. Images visibly drift for the whole interval, with no stutter and no visible edges. Pausing music freezes the drift and the timer. Resume continues.
 5. Esc exits Vibe mode and music keeps playing. The HUD hides after 4s and reappears on input.
-6. A signed-out visitor cannot reach `/scenes` and cannot call any mutation. The admin can upload, rename, reorder, toggle and delete, and deleting also removes the UploadThing file.
+6. A visitor without a valid admin PIN session cannot reach `/scenes` or call a mutation. The admin can upload, rename, reorder, toggle and delete, and deleting also removes the UploadThing file.
 7. A 3840x2160 upload looks sharp full screen on a 4K display, with no re-compression artifacts and no blurry upscale.
 8. With zero scenes the fallback scene runs and the app still works.
 9. `pnpm typecheck && pnpm lint && pnpm test && pnpm build` all pass. Lighthouse accessibility is 95 or higher on `/`.
@@ -244,6 +243,5 @@ Ship `.env.example`. Never commit real values. Validate env at startup with `zod
 - Do not use the Next.js image optimizer for Vibe-mode scenes.
 - Do not use purple, black backgrounds, glassmorphism, neon glows or gradient-wash hero sections.
 - Do not use Inter, Roboto, Arial or Space Grotesk.
-- Do not put the service-role key, the UploadThing token or the admin check in client code.
+- Do not put database credentials, the UploadThing token or the admin check in client code.
 - Do not add features not listed here. Finish and verify what's listed first.
-

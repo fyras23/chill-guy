@@ -23,3 +23,14 @@ model Scene {
   @@index([isActive, sortOrder], map: "scenes_active_order_idx")
   @@map("scenes")
 }
+
+model AdminUser {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username       String    @unique
+  pinHash        String    @map("pin_hash")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("admin_users")
+}

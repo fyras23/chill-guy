@@ -7,7 +7,7 @@ import { ScenesManager } from "./ScenesManager";
 import { ArrowLeft } from "lucide-react";
 
 export default async function ScenesPage() {
-  const { isAdmin, email } = await verifyAdminUser();
+  const { isAdmin } = await verifyAdminUser();
 
   if (!isAdmin) {
     redirect("/login?redirect=/scenes");
@@ -33,7 +33,7 @@ export default async function ScenesPage() {
 
         <div className="flex items-center gap-4">
           <Link
-            href="/"
+            href="/api/admin/logout"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-raised text-primary border-[2px] border-primary rounded-md font-bold font-body text-sm shadow-sticker hover:-translate-x-px hover:-translate-y-px transition-all focus-ring"
           >
             <ArrowLeft className="w-4 h-4" strokeWidth={2.5} />
@@ -49,7 +49,7 @@ export default async function ScenesPage() {
             Scenes Manager
           </h1>
           <p className="font-body text-sm text-text-muted">
-            Signed in as {email}. Drag to reorder, edit names, or toggle visibility in Vibe mode.
+            Admin access is active. Drag to reorder, edit names, or toggle visibility in Vibe mode.
           </p>
         </div>
 
@@ -58,4 +58,3 @@ export default async function ScenesPage() {
     </main>
   );
 }
-

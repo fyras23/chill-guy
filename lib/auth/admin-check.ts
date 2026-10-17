@@ -1,25 +1,19 @@
-import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import {
+  ADMIN_SESSION_COOKIE,
+  getCurrentTimeMs,
+  verifyAdminSessionToken,
+} from "@/lib/auth/admin-session";
 
-export async function verifyAdminUser(): Promise<{ isAdmin: boolean; email?: string | null }> {
-  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-  if (!adminEmail) {
-    return { isAdmin: false };
-  }
+export async function verifyAdminUser(): Promise<{
+  isAdmin: boolean;
+  email: string | null;
+}> {
+  const cookieStore = await cookies();
+  const isAdmin = verifyAdminSessionToken(
+    cookieStore.get(ADMIN_SESSION_COOKIE)?.value,
+    getCurrentTimeMs()
+  );
 
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-
-    if (error || !data.user || !data.user.email) {
-      return { isAdmin: false };
-    }
-
-    const userEmail = data.user.email.trim().toLowerCase();
-    const isAdmin = userEmail === adminEmail;
-
-    return { isAdmin, email: userEmail };
-  } catch {
-    return { isAdmin: false };
-  }
+  return { isAdmin, email: isAdmin ? "admin" : null };
 }
-

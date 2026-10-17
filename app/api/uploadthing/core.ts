@@ -1,7 +1,7 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
 import { verifyAdminUser } from "@/lib/auth/admin-check";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { prisma } from "@/lib/prisma";
 
 const f = createUploadthing();
 
@@ -15,7 +15,7 @@ export const ourFileRouter = {
     .middleware(async () => {
       const { isAdmin, email } = await verifyAdminUser();
       if (!isAdmin) {
-        throw new UploadThingError("Unauthorized: Admin email required");
+        throw new UploadThingError("Unauthorized: Admin access required");
       }
       return { userEmail: email };
     })
@@ -53,4 +53,3 @@ export const ourFileRouter = {
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;
-

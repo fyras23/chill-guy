@@ -50,16 +50,10 @@ create policy "public can read active scenes"
   on public.scenes for select
   using (is_active = true);
 
--- Note: Mutations (insert, update, delete) are executed on the server
--- using the Supabase service-role client after verifying the admin email.
+-- Note: Prisma performs server-side scene mutations after verifying the admin session.
 ```
 
-### Auth Redirect URLs
-In your Supabase project under **Authentication -> URL Configuration**:
-- **Site URL:** `http://localhost:3000` (or your production Vercel domain)
-- **Redirect URLs:**
-  - `http://localhost:3000/auth/callback`
-  - `https://your-domain.vercel.app/auth/callback`
+For an existing database that already has the `scenes` table, baseline that table in Prisma's migration history once with `npx prisma migrate resolve --applied 20261016000000_baseline`, then run `npx prisma migrate deploy`. On a fresh database, run `npx prisma migrate deploy` directly; the baseline migration creates `scenes` before the private admin account and its database-backed failed-attempt limiter.
 
 ---
 
@@ -76,13 +70,16 @@ In your Supabase project under **Authentication -> URL Configuration**:
 Create `.env.local` based on `.env.example`:
 
 ```bash
+DATABASE_URL=postgresql://user:password@host:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://user:password@host:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
 UPLOADTHING_TOKEN=your_uploadthing_token
-ADMIN_EMAIL=your-email@example.com
+ADMIN_SESSION_SECRET=generate-a-random-secret-at-least-32-characters
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
+
+The admin PIN is stored as a salted scrypt hash, not as readable text. Set `ADMIN_SESSION_SECRET` to a unique random value; it signs the eight-hour admin session cookie. Choosing **Back to deck** signs out the current browser, so opening `/scenes` again requires the PIN. Prisma maps the `AdminUser` model to the private `admin_users` table and is used for scene reads and mutations, so a Supabase service-role key is not required.
 
 ---
 

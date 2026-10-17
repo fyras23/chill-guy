@@ -4,8 +4,7 @@ import { z } from "zod";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { UTApi } from "uploadthing/server";
 import { verifyAdminUser } from "@/lib/auth/admin-check";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createPublicClient } from "@/lib/supabase/public";
+import { prisma } from "@/lib/prisma";
 import type { Scene } from "@/lib/supabase/types";
 
 // Zod schemas for input validation
@@ -26,7 +25,9 @@ const toggleSceneActiveSchema = z.object({
   isActive: z.boolean(),
 });
 
-const reorderScenesSchema = z.array(z.string().uuid());
+const reorderScenesSchema = z
+  .array(z.string().uuid())
+  .refine((ids) => new Set(ids).size === ids.length);
 
 const deleteSceneSchema = z.object({
   id: z.string().uuid(),
@@ -38,19 +39,25 @@ const deleteSceneSchema = z.object({
  */
 export async function getActiveScenes(): Promise<Scene[]> {
   try {
-    const supabase = createPublicClient();
-    const { data, error } = await supabase
-      .from("scenes")
-      .select("*")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true });
+    const scenes = await prisma.scene.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: "asc" },
+    });
 
-    if (error) {
-      return [];
-    }
-
-    return (data as Scene[]) || [];
-  } catch {
+    return scenes.map((scene) => ({
+      id: scene.id,
+      name: scene.name,
+      url: scene.url,
+      file_key: scene.fileKey,
+      width: scene.width,
+      height: scene.height,
+      size_bytes: scene.sizeBytes === null ? null : Number(scene.sizeBytes),
+      sort_order: scene.sortOrder,
+      is_active: scene.isActive,
+      created_at: scene.createdAt.toISOString(),
+    }));
+  } catch (error) {
+    console.error("Failed to load active scenes:", error);
     return [];
   }
 }
@@ -61,20 +68,25 @@ export async function getActiveScenes(): Promise<Scene[]> {
 export async function getAllScenesAdmin(): Promise<Scene[]> {
   const { isAdmin } = await verifyAdminUser();
   if (!isAdmin) {
-    throw new Error("Unauthorized: Admin email required");
+    throw new Error("Unauthorized: Admin access required");
   }
 
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("scenes")
-    .select("*")
-    .order("sort_order", { ascending: true });
+  const scenes = await prisma.scene.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
 
-  if (error) {
-    throw new Error(`Failed to load scenes: ${error.message}`);
-  }
-
-  return (data as Scene[]) || [];
+  return scenes.map((scene) => ({
+    id: scene.id,
+    name: scene.name,
+    url: scene.url,
+    file_key: scene.fileKey,
+    width: scene.width,
+    height: scene.height,
+    size_bytes: scene.sizeBytes === null ? null : Number(scene.sizeBytes),
+    sort_order: scene.sortOrder,
+    is_active: scene.isActive,
+    created_at: scene.createdAt.toISOString(),
+  }));
 }
 
 /**
@@ -92,23 +104,18 @@ export async function updateSceneDimensions(input: z.infer<typeof updateDimensio
   }
 
   try {
-    const supabase = createAdminClient();
-    const updateData: Record<string, unknown> = {
+    const updateData = {
       width: parsed.data.width,
       height: parsed.data.height,
+      ...(parsed.data.sizeBytes !== undefined && {
+        sizeBytes: BigInt(parsed.data.sizeBytes),
+      }),
     };
-    if (parsed.data.sizeBytes !== undefined) {
-      updateData.size_bytes = parsed.data.sizeBytes;
-    }
 
-    const { error } = await supabase
-      .from("scenes")
-      .update(updateData)
-      .eq("file_key", parsed.data.fileKey);
-
-    if (error) {
-      return { error: error.message };
-    }
+    await prisma.scene.update({
+      where: { fileKey: parsed.data.fileKey },
+      data: updateData,
+    });
 
     revalidateTag("scenes", "max");
     revalidatePath("/");
@@ -134,15 +141,10 @@ export async function renameScene(input: z.infer<typeof renameSceneSchema>) {
   }
 
   try {
-    const supabase = createAdminClient();
-    const { error } = await supabase
-      .from("scenes")
-      .update({ name: parsed.data.name })
-      .eq("id", parsed.data.id);
-
-    if (error) {
-      return { error: error.message };
-    }
+    await prisma.scene.update({
+      where: { id: parsed.data.id },
+      data: { name: parsed.data.name },
+    });
 
     revalidateTag("scenes", "max");
     revalidatePath("/");
@@ -168,15 +170,10 @@ export async function toggleSceneActive(input: z.infer<typeof toggleSceneActiveS
   }
 
   try {
-    const supabase = createAdminClient();
-    const { error } = await supabase
-      .from("scenes")
-      .update({ is_active: parsed.data.isActive })
-      .eq("id", parsed.data.id);
-
-    if (error) {
-      return { error: error.message };
-    }
+    await prisma.scene.update({
+      where: { id: parsed.data.id },
+      data: { isActive: parsed.data.isActive },
+    });
 
     revalidateTag("scenes", "max");
     revalidatePath("/");
@@ -202,12 +199,14 @@ export async function reorderScenes(orderedIds: z.infer<typeof reorderScenesSche
   }
 
   try {
-    const supabase = createAdminClient();
-    // Update sort_order for each ID
-    for (let index = 0; index < parsed.data.length; index++) {
-      const id = parsed.data[index];
-      await supabase.from("scenes").update({ sort_order: index }).eq("id", id);
-    }
+    await prisma.$transaction(
+      parsed.data.map((id, index) =>
+        prisma.scene.update({
+          where: { id },
+          data: { sortOrder: index },
+        })
+      )
+    );
 
     revalidateTag("scenes", "max");
     revalidatePath("/");
@@ -237,13 +236,10 @@ export async function deleteScene(input: z.infer<typeof deleteSceneSchema>) {
     const utapi = new UTApi();
     await utapi.deleteFiles(parsed.data.fileKey);
 
-    // 2. Delete from Supabase
-    const supabase = createAdminClient();
-    const { error } = await supabase.from("scenes").delete().eq("id", parsed.data.id);
-
-    if (error) {
-      return { error: error.message };
-    }
+    // 2. Delete the scene metadata from Postgres.
+    await prisma.scene.delete({
+      where: { id: parsed.data.id },
+    });
 
     revalidateTag("scenes", "max");
     revalidatePath("/");
@@ -253,4 +249,3 @@ export async function deleteScene(input: z.infer<typeof deleteSceneSchema>) {
     return { error: (err as Error).message };
   }
 }
-
