@@ -76,11 +76,11 @@ export async function POST(request: Request) {
       ADMIN_SESSION_COOKIE,
       createAdminSessionToken(getCurrentTimeMs()),
       {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      path: "/",
-      maxAge: ADMIN_SESSION_TTL_SECONDS,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",   // "strict" blocks cookies on Vercel's proxied uploadthing requests → 403
+        path: "/",
+        maxAge: ADMIN_SESSION_TTL_SECONDS,
       }
     );
     return response;
